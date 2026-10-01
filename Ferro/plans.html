@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FERRO — My plans</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles/style.css">
+</head>
+<body>
+<div class="screen">
+  <header>
+    <div class="date">My workouts</div>
+    <h1 class="display">Plans</h1>
+  </header>
+
+  <main>
+    <div id="status" class="form-status" role="alert" aria-live="polite"></div>
+    <div id="list"><div class="empty-state">Loading plans...</div></div>
+    <button class="cta" id="new-button" style="margin:8px 0 0; width:100%; cursor:pointer; border:none;">+ New plan</button>
+  </main>
+
+  <nav>
+    <a href="workout.html"><span class="icon"></span>Today</a>
+    <a class="active"  href="plans.html"><span class="icon"></span>Plans</a>
+    <a href="history.html"><span class="icon"></span>History</a>
+    <a href="progress.html"><span class="icon"></span>Progress</a>
+    <a href="profile.html"><span class="icon"></span>Profile</a>
+  </nav>
+</div>
+
+<script src="assets/scripts/api.js"></script>
+<script>
+  if (!FerroApi.requireLogin()) throw new Error('session missing');
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  async function migrateLocalPlans() {
+    if (localStorage.getItem('ferro_local_migration')) return;
+
+    var legacyPlans = [];
+    try {
+      legacyPlans = JSON.parse(localStorage.getItem('ferro_plans') || '[]');
+    } catch (_) {
+      legacyPlans = [];
+    }
+
+    if (!Array.isArray(legacyPlans) || legacyPlans.length === 0) {
+      localStorage.setItem('ferro_local_migration', '1');
+      return;
+    }
+
+    for (var i = 0; i < legacyPlans.length; i++) {
+      var plan = legacyPlans[i];
+      await FerroApi.createPlan({
+        name: plan.name,
+        restDays: plan.restDays || 0,
+        days: (plan.days || []).map(function(d) {
+          return {
+            name: d.name,
+            exercises: (d.exercises || []).map(function(ex) {
+              return {
+                name: ex.name,
+                sets: ex.sets,
+                reps: ex.reps,
+                weight: ex.weight
+              };
+            })
+          };
+        })
+      });
+    }
+
+    localStorage.setItem('ferro_local_migration', '1');
+  }
+
+  async function render() {
+    var list = document.getElementById('list');
+    var status = document.getElementById('status');
+
+    try {
+      status.textContent = '';
+      await migrateLocalPlans();
+
+      var plans = await FerroApi.listPlans();
+
+      if (!plans || plans.length === 0) {
+        list.innerHTML = '<div class="empty-state">You do not have any workout plans yet.<br>Create your first one below 👇</div>';
+        return;
+      }
+
+      list.innerHTML = plans.map(function(plan) {
+        var dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        var workoutDays = (plan.days || []).slice().sort(function(a, b) {
+          return (a.weekday == null ? 0 : a.weekday) - (b.weekday == null ? 0 : b.weekday);
+        });
+        var chips = workoutDays.map(function(d, index) {
+          var weekday = Number.isInteger(d.weekday) ? d.weekday : index;
+          return '<span class="day-chip training">' + escapeHtml(dayNames[weekday]) + '</span>';
+        }).join('');
+        var restDays = Math.max(0, 7 - workoutDays.length);
+
+        var exerciseCount = (plan.days || []).reduce(function(total, day) {
+          return total + ((day.exercises || []).length);
+        }, 0);
+
+        return '' +
+          '<article class="plan-card">' +
+            '<div class="plan-card-top">' +
+              '<div>' +
+                '<div class="name">' + escapeHtml(plan.name) + '</div>' +
+                '<div class="meta">' + (plan.days || []).length + ' workout days · ' +
+                  restDays + ' of rest · ' + exerciseCount + ' exercises</div>' +
+              '</div>' +
+              (plan.active ? '<span class="plan-badge">Active</span>' : '') +
+            '</div>' +
+            '<div class="day-chips">' + chips + '</div>' +
+            '<div class="plan-actions">' +
+              '<a class="btn-small" href="new-plan.html?id=' + encodeURIComponent(plan.id) + '">Manage</a>' +
+              (!plan.active ? '<button type="button" class="btn-small btn-secondary" data-active-id="' + plan.id + '">Activate</button>' : '') +
+              '<button type="button" class="btn-danger-outline" data-delete-id="' + plan.id + '">Delete</button>' +
+            '</div>' +
+          '</article>';
+      }).join('');
+    } catch (error) {
+      status.textContent = error.message;
+      status.classList.add('error');
+      list.innerHTML = '';
+    }
+  }
+
+  document.getElementById('new-button').addEventListener('click', function() {
+    window.location.href = 'new-plan.html';
+  });
+
+  document.getElementById('list').addEventListener('click', async function(e) {
+    var activateButton = e.target.closest('[data-active-id]');
+    var deleteButton = e.target.closest('[data-delete-id]');
+
+    try {
+      if (activateButton) {
+        await FerroApi.activatePlan(activateButton.getAttribute('data-active-id'));
+        await render();
+        return;
+      }
+
+      if (deleteButton) {
+        var id = deleteButton.getAttribute('data-delete-id');
+        var plans = await FerroApi.listPlans();
+        var plan = plans.find(function(item) { return String(item.id) === String(id); });
+        if (!plan) return;
+
+        if (!window.confirm(
+          'Delete plan "' + plan.name + '"?\n\n' +
+          'The days and exercises in this plan will also be removed. ' +
+          'Previously completed workouts will be preserved.'
+        )) return;
+
+        await FerroApi.deletePlan(id);
+        await render();
+      }
+    } catch (error) {
+      var status = document.getElementById('status');
+      status.textContent = error.message;
+      status.className = 'form-status error';
+    }
+  });
+
+  render();
+</script>
+</body>
+</html>

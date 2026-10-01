@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FERRO — Today's workout</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles/style.css">
+</head>
+<body>
+<div class="screen">
+  <header>
+    <div class="date" id="date-line">—</div>
+    <h1 class="display" id="day-title">—</h1>
+    <a href="plans.html" style="font-size:12px; color:var(--dim); text-decoration:underline;">manage plans</a>
+  </header>
+
+  <div class="weekly-nav" id="weekly-nav" style="display:none;">
+    <div class="weekly-buttons" id="weekly-buttons"></div>
+  </div>
+
+  <div class="preview-tag" id="preview-tag" style="display:none;"></div>
+
+  <main id="content">
+    <div class="empty-state">Loading workout...</div>
+  </main>
+
+  <nav>
+    <a class="active" href="workout.html"><span class="icon"></span>Today</a>
+    <a href="plans.html"><span class="icon"></span>Plans</a>
+    <a href="history.html"><span class="icon"></span>History</a>
+    <a href="progress.html"><span class="icon"></span>Progress</a>
+    <a href="profile.html"><span class="icon"></span>Profile</a>
+  </nav>
+</div>
+
+<script src="assets/scripts/api.js"></script>
+<script>
+  if (!FerroApi.requireLogin()) throw new Error('session missing');
+
+  var DAYS = [
+    { index: 0, short: 'Sun', name: 'Sunday' },
+    { index: 1, short: 'Mon', name: 'Monday' },
+    { index: 2, short: 'Tue', name: 'Tuesday' },
+    { index: 3, short: 'Wed', name: 'Wednesday' },
+    { index: 4, short: 'Thu', name: 'Thursday' },
+    { index: 5, short: 'Fri', name: 'Friday' },
+    { index: 6, short: 'Sat', name: 'Saturday' }
+  ];
+
+  var state = {
+    plan: null,
+    days: [],
+    todayIndex: 0,
+    index: 0
+  };
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function todayWeekIndex() {
+    // JavaScript e FERRO usam domingo=0, segunda=1 ... sábado=6.
+    return new Date().getDay();
+  }
+
+  function formatToday() {
+    return new Intl.DateTimeFormat('en', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long'
+    }).format(new Date());
+  }
+
+  function buildWeek(plan) {
+    var map = {};
+    (plan.days || []).forEach(function(day, index) {
+      var weekday = Number.isInteger(day.weekday) ? day.weekday : index;
+      map[weekday] = day;
+    });
+
+    return DAYS.map(function(_, index) {
+      return {
+        index: index,
+        type: map[index] ? 'training' : 'rest',
+        day: map[index] || null
+      };
+    });
+  }
+
+  function renderWeek() {
+    var buttons = document.getElementById('weekly-buttons');
+
+    buttons.innerHTML = state.days.map(function(item) {
+      var isTodayDay = item.index === state.todayIndex;
+      var isSelected = item.index === state.index;
+      var classes = 'week-day-view ' +
+        (item.type === 'training' ? 'is-training' : 'is-rest') +
+        (isSelected ? ' selected' : '') +
+        (isTodayDay ? ' today' : '');
+
+      return '' +
+        '<button type="button" class="' + classes + '" data-day="' + item.index + '">' +
+          '<strong>' + DAYS[item.index].short + '</strong>' +
+          '<span>' + (item.type === 'training' ? 'Workout' : 'Rest') + '</span>' +
+        '</button>';
+    }).join('');
+  }
+
+  function renderContent() {
+    var item = state.days[state.index];
+    var title = document.getElementById('day-title');
+    var dateLine = document.getElementById('date-line');
+    var preview = document.getElementById('preview-tag');
+    var content = document.getElementById('content');
+
+    if (!item) return;
+
+    var isToday = state.index === state.todayIndex;
+
+    dateLine.textContent = isToday ? formatToday() : DAYS[item.index].name;
+    preview.style.display = isToday ? 'none' : 'block';
+    preview.textContent = isToday ? '' : 'Viewing another day of the week';
+
+    if (item.type === 'rest') {
+      title.textContent = 'Rest';
+      content.innerHTML =
+        '<div class="rest-day"><span class="big">💤</span>' +
+        'Rest day.<br>Use it to recover.</div>';
+      return;
+    }
+
+    title.textContent = item.day.name || 'Workout day';
+
+    var exercises = item.day.exercises || [];
+    if (exercises.length === 0) {
+      content.innerHTML =
+        '<div class="empty-state">No exercises have been added for this day yet.</div>';
+      return;
+    }
+
+    var rows = exercises.map(function(ex) {
+      return '' +
+        '<div class="exercise">' +
+          '<div class="check" data-check-ex="' + ex.id + '"></div>' +
+          '<div class="ex-name">' + escapeHtml(ex.name) + '</div>' +
+          '<div class="ex-meta">' +
+            escapeHtml(ex.sets || '') + '×' + escapeHtml(ex.reps || '') +
+            (ex.weight ? ' · ' + escapeHtml(ex.weight) : '') +
+          '</div>' +
+        '</div>';
+    }).join('');
+
+    content.innerHTML = '' +
+      '<div class="section-head">' + exercises.length + ' exercises</div>' +
+      rows +
+      (isToday ?
+        '<div class="cta" id="complete-button" style="cursor:pointer;">Complete workout</div>' :
+        '');
+  }
+
+  function render() {
+    renderWeek();
+    renderContent();
+  }
+
+  async function initialize() {
+    try {
+      var plan = await FerroApi.activePlan();
+
+      if (!plan || !plan.days || plan.days.length === 0) {
+        document.getElementById('date-line').textContent = formatToday();
+        document.getElementById('day-title').textContent = 'No active plan';
+        document.getElementById('content').innerHTML =
+          '<div class="empty-state">You have not created a workout plan yet.</div>' +
+          '<a class="cta" href="new-plan.html" style="display:block; text-decoration:none; text-align:center;">Create plan</a>';
+        return;
+      }
+
+      state.plan = plan;
+      state.days = buildWeek(plan);
+      state.todayIndex = todayWeekIndex();
+      state.index = state.todayIndex;
+
+      document.getElementById('weekly-nav').style.display = 'block';
+      render();
+    } catch (error) {
+      document.getElementById('day-title').textContent = 'Error';
+      document.getElementById('content').innerHTML =
+        '<div class="empty-state">' + escapeHtml(error.message) + '</div>';
+    }
+  }
+
+  document.getElementById('weekly-buttons').addEventListener('click', function(e) {
+    var button = e.target.closest('[data-day]');
+    if (!button) return;
+    state.index = parseInt(button.getAttribute('data-day'), 10);
+    render();
+  });
+
+  document.getElementById('content').addEventListener('click', function(e) {
+    if (e.target.classList.contains('check')) {
+      e.target.classList.toggle('done');
+      var name = e.target.parentElement.querySelector('.ex-name');
+      if (name) name.classList.toggle('done');
+    }
+
+    if (e.target.id === 'complete-button') {
+      alert('Workout logging will be connected to history in the next step.');
+    }
+  });
+
+  initialize();
+</script>
+</body>
+</html>
