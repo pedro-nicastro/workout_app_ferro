@@ -1,132 +1,209 @@
-# FERRO — XAMPP + Java + MariaDB
+# 🏋️ Site de Treinos
 
-## Arquitetura
+Aplicação web pessoal para **registrar, gerenciar e visualizar treinos de academia** em um só lugar, com histórico e acompanhamento da evolução.
 
-- Apache (XAMPP): HTML, CSS e JavaScript
-- MariaDB (XAMPP): database `ferro_db`
-- Java + Spring Boot: API REST em `127.0.0.1:8081`
-- JDBC: conexão Java -> MariaDB
+> Projeto desenvolvido individualmente, seguindo a metodologia ágil **Scrum**.
 
-## 1. Database
+---
 
-No XAMPP, inicie **MySQL** (o seu ambiente mostrou MariaDB 10.4.32 na port 3306).
+## 📑 Sumário
 
-No MySQL Workbench, execute:
+- [Sobre o projeto](#-sobre-o-projeto)
+- [Funcionalidades](#-funcionalidades)
+- [Tecnologias](#-tecnologias)
+- [Estrutura do projeto](#-estrutura-do-projeto)
+- [Modelo de dados](#-modelo-de-dados)
+- [Como executar](#-como-executar)
+- [Metodologia (Scrum)](#-metodologia-scrum)
+- [Roadmap](#-roadmap)
+- [Autor](#-autor)
+
+---
+
+## 📖 Sobre o projeto
+
+O **Site de Treinos** nasceu da necessidade de substituir anotações soltas (papel, bloco de notas, planilhas) por uma ferramenta própria, simples e organizada para acompanhar a rotina de academia.
+
+Com ele é possível cadastrar treinos e exercícios, registrar séries, repetições e cargas, e visualizar o histórico para acompanhar a evolução ao longo do tempo.
+
+**Objetivos do projeto:**
+
+- Centralizar o registro dos treinos em uma única aplicação;
+- Facilitar a consulta e a edição do histórico;
+- Praticar desenvolvimento full stack (front-end, back-end e banco de dados);
+- Aplicar Scrum na prática em um projeto individual.
+
+---
+
+## ✨ Funcionalidades
+
+> Ajuste esta lista conforme o que já está implementado no seu backlog.
+
+- [ ] Cadastro de treinos (ex.: Treino A, B, C)
+- [ ] Cadastro de exercícios por treino
+- [ ] Registro de séries, repetições e carga
+- [ ] Edição e exclusão de treinos e exercícios
+- [ ] Histórico de treinos realizados
+- [ ] Visualização da evolução de carga por exercício
+- [ ] Filtros por data, grupo muscular ou exercício
+
+---
+
+## 🛠 Tecnologias
+
+| Camada | Tecnologias |
+| --- | --- |
+| Front-end | HTML, CSS, JavaScript |
+| Back-end | Java |
+| Banco de dados | SQL / MySQL |
+| Gestão do projeto | Scrum (backlog, sprints) |
+
+---
+
+## 📂 Estrutura do projeto
+
+> Exemplo de organização. Adapte à estrutura real do seu repositório.
+
+```
+site-treinos/
+├── frontend/
+│   ├── index.html
+│   ├── css/
+│   │   └── style.css
+│   └── js/
+│       └── main.js
+├── backend/
+│   └── src/
+│       └── ...            # código Java (controllers, services, DAOs/models)
+├── database/
+│   ├── schema.sql         # criação das tabelas
+│   └── seed.sql           # dados de exemplo (opcional)
+├── docs/
+│   └── backlog.md         # backlog do produto e sprints
+└── README.md
+```
+
+---
+
+## 🗄 Modelo de dados
+
+> Sugestão inicial de modelagem. Ajuste conforme sua implementação.
 
 ```sql
-CREATE DATABASE IF NOT EXISTS ferro_db
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
+CREATE TABLE treino (
+    id        INT AUTO_INCREMENT PRIMARY KEY,
+    nome      VARCHAR(100) NOT NULL,
+    descricao VARCHAR(255)
+);
+
+CREATE TABLE exercicio (
+    id             INT AUTO_INCREMENT PRIMARY KEY,
+    nome           VARCHAR(100) NOT NULL,
+    grupo_muscular VARCHAR(50)
+);
+
+CREATE TABLE registro_treino (
+    id        INT AUTO_INCREMENT PRIMARY KEY,
+    treino_id INT NOT NULL,
+    data      DATE NOT NULL,
+    FOREIGN KEY (treino_id) REFERENCES treino(id)
+);
+
+CREATE TABLE serie (
+    id                INT AUTO_INCREMENT PRIMARY KEY,
+    registro_treino_id INT NOT NULL,
+    exercicio_id      INT NOT NULL,
+    repeticoes        INT NOT NULL,
+    carga_kg          DECIMAL(6,2),
+    FOREIGN KEY (registro_treino_id) REFERENCES registro_treino(id),
+    FOREIGN KEY (exercicio_id) REFERENCES exercicio(id)
+);
 ```
 
-Depois execute todo o arquivo:
+---
 
-`database/ferro_database.sql`
+## 🚀 Como executar
 
-Teste:
+### Pré-requisitos
 
-```sql
-USE ferro_db;
-SHOW TABLES;
-SELECT COUNT(*) FROM usuarios;
-```
+- [Java JDK](https://adoptium.net/) (versão 17 ou superior recomendada)
+- [MySQL](https://dev.mysql.com/downloads/) 8+
+- Um navegador atualizado
+- Git
 
-## 2. Java backend
+### Passo a passo
 
-Requisitos:
+1. **Clone o repositório**
 
-- JDK 17 ou superior
-- Maven
+   ```bash
+   git clone https://github.com/SEU-USUARIO/site-treinos.git
+   cd site-treinos
+   ```
 
-Na raiz do project existe:
+2. **Crie o banco de dados**
 
-`start-backend.bat`
+   ```bash
+   mysql -u root -p -e "CREATE DATABASE site_treinos;"
+   mysql -u root -p site_treinos < database/schema.sql
+   ```
 
-Ou, dentro de `backend/`:
+3. **Configure a conexão com o banco**
 
-```bat
-mvn spring-boot:run
-```
+   Edite o arquivo de configuração do back-end com suas credenciais:
 
-A API deve ficar em:
+   ```
+   url:      jdbc:mysql://localhost:3306/site_treinos
+   usuario:  seu_usuario
+   senha:    sua_senha
+   ```
 
-`http://127.0.0.1:8081`
+4. **Execute o back-end**
 
-## 3. Teste pelo navegador
+   ```bash
+   cd backend
+   # comando de execução conforme sua ferramenta de build (Maven, Gradle, IDE...)
+   ```
 
-Antes de testar cadastro/login, abra:
+5. **Abra o front-end**
 
-`http://127.0.0.1:8081/api/health`
+   Abra `frontend/index.html` no navegador ou sirva a pasta com um servidor local.
 
-Você deve receber JSON com:
+---
 
-- `api: online`
-- `conexaoBanco: ok`
-- `database: ferro_db`
-- `servidor` contendo a versão do MariaDB/MySQL
+## 🔄 Metodologia (Scrum)
 
-Também existe `api-test.html` para um diagnóstico visual.
+O projeto é conduzido com **Scrum adaptado para um desenvolvedor solo**:
 
-## 4. Frontend
+- **Product Backlog:** lista priorizada de funcionalidades e melhorias;
+- **Sprints:** ciclos curtos com objetivo definido e itens selecionados do backlog;
+- **Revisão e retrospectiva:** ao fim de cada sprint, avaliação do que foi entregue e do que pode melhorar.
 
-Copie a folder do project para:
+O backlog e o histórico das sprints ficam em `docs/`.
 
-`C:\xampp\htdocs\TrainingWebSite_DB\`
+---
 
-Open:
+## 🗺 Roadmap
 
-`http://localhost/TrainingWebSite_DB/`
+- [x] Definição da stack e da metodologia
+- [ ] Construção do Product Backlog
+- [ ] Modelagem e criação do banco de dados
+- [ ] CRUD de treinos e exercícios
+- [ ] Registro de séries, repetições e cargas
+- [ ] Histórico e filtros
+- [ ] Gráficos de evolução
+- [ ] Deploy
 
-Não abra os HTML com `file:///`.
+---
 
-## 5. Configuração do database
+## 👤 Autor
 
-O padrão já está configurado para o seu XAMPP/MariaDB:
+**Seu Nome**
 
-```properties
-spring.datasource.url=jdbc:mariadb://127.0.0.1:3306/ferro_db
-spring.datasource.username=root
-spring.datasource.password=
-```
+- GitHub: [@seu-usuario](https://github.com/seu-usuario)
+- LinkedIn: [seu-perfil](https://www.linkedin.com/in/seu-perfil)
 
-Para alterar sem editar o código, podem ser usadas as variáveis:
+---
 
-- `DB_URL`
-- `DB_USER`
-- `DB_PASSWORD`
-- `SERVER_PORT`
+## 📄 Licença
 
-## 6. Cadastro e login
-
-O cadastro envia os dados para:
-
-`POST /api/auth/register`
-
-O login envia os dados para:
-
-`POST /api/auth/login`
-
-As passwords são armazenadas como hash PBKDF2, não em texto puro.
-
-## 7. Planos e exercícios
-
-Já integrados ao database:
-
-- listar planos
-- criar plano
-- editar plano
-- excluir plano
-- ativar plano
-- gerenciar exercícios
-
-## 8. Se aparecer erro
-
-Teste primeiro:
-
-`http://127.0.0.1:8081/api/health`
-
-Se não abrir, o problema é no backend Java.
-
-Se abrir com `conexaoBanco: erro`, o problema é entre Java e MariaDB.
-
-Se abrir com `conexaoBanco: ok`, então o database e o backend estão funcionando e o próximo ponto a verificar é o frontend.
+Este projeto é de uso pessoal e educacional. Defina aqui a licença desejada (ex.: MIT).
