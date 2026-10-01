@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FERRO — Create account</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles/style.css">
+</head>
+<body>
+<div class="screen">
+  <div class="brand" style="padding-top:40px;">
+    <h1 class="display">Create account</h1>
+    <p>Takes less than a minute</p>
+  </div>
+
+  <form id="register-form">
+    <div class="field">
+      <label for="name">Name</label>
+      <input id="name" type="text" placeholder="Your name" required>
+    </div>
+    <div class="field">
+      <label for="email">Email</label>
+      <input id="email" type="email" placeholder="you@email.com" required>
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" type="password" placeholder="Minimum 8 characters" minlength="8" required>
+    </div>
+    <div class="field">
+      <label for="confirm-password">Confirm password</label>
+      <input id="confirm-password" type="password" placeholder="Repeat your password" minlength="8" required>
+    </div>
+
+    <label class="toggle-row" style="margin-bottom:8px;">
+      <span>I accept the terms of use</span>
+      <input id="terms" type="checkbox" required>
+    </label>
+
+    <div class="form-status" id="status" role="alert" aria-live="polite"></div>
+    <button id="register-button" type="submit">Create account</button>
+  </form>
+
+  <div class="alt">Already have an account? <a href="login.html">Log in</a></div>
+</div>
+
+<script src="assets/scripts/api.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function() {
+    var form = document.getElementById('register-form');
+    var statusDiv = document.getElementById('status');
+    var button = document.getElementById('register-button');
+
+    if (!form || !statusDiv || !button) {
+      console.error("Critical error: A required form element was not found in the DOM.");
+      return;
+    }
+
+    form.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      statusDiv.textContent = '';
+      statusDiv.className = 'form-status';
+
+      var password = document.getElementById('password').value;
+      var confirmPassword = document.getElementById('confirm-password').value;
+
+      if (password !== confirmPassword) {
+        statusDiv.textContent = 'Passwords do not match.';
+        statusDiv.classList.add('error');
+        return;
+      }
+
+      button.disabled = true;
+      button.textContent = 'Creating...';
+
+      try {
+        await FerroApi.register({
+          name: document.getElementById('name').value,
+          email: document.getElementById('email').value,
+          password: password,
+          termsAccepted: document.getElementById('terms').checked
+        });
+
+        window.location.href = 'workout.html';
+      } catch (error) {
+        statusDiv.textContent = error.message || 'Error connecting to the server.';
+        statusDiv.classList.add('error');
+        button.disabled = false;
+        button.textContent = 'Create account';
+      }
+    });
+  });
+</script>
+</body>
+</html>

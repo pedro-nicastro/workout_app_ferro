@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FERRO — Profile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles/style.css">
+</head>
+<body>
+<div class="screen">
+  <div class="profile-head">
+    <div class="avatar" id="avatar">—</div>
+    <div>
+      <div class="name" id="profile-name">Loading...</div>
+      <div class="email" id="profile-email">—</div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="num">0<span>kg</span></div><div class="lbl">Current weight</div></div>
+    <div class="stat"><div class="num">0<span>kg</span></div><div class="lbl">Goal</div></div>
+    <div class="stat"><div class="num">0</div><div class="lbl">Total workouts</div></div>
+  </div>
+
+  <main>
+    <div class="section-head">Account</div>
+
+    <div id="status" class="form-status" role="alert" aria-live="polite"></div>
+
+    <div class="dropdown">
+      <button class="list-item" type="button">
+        <span>Edit profile</span><span class="chev">›</span>
+      </button>
+      <div class="dropdown-panel">
+        <div class="dropdown-panel-inner">
+          <div class="field">
+            <label for="name">Name</label>
+            <input id="name" type="text">
+          </div>
+          <div class="field" style="margin-bottom:12px;">
+            <label for="email-edit">Email</label>
+            <input id="email-edit" type="email">
+          </div>
+          <button class="btn-small" id="save-profile-button" type="button">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="dropdown">
+      <button class="list-item" type="button">
+        <span>Units</span><span class="chev">›</span>
+      </button>
+      <div class="dropdown-panel">
+        <div class="dropdown-panel-inner">
+          <label class="radio-row"><span>Kilograms (kg)</span><input type="radio" name="unit" checked></label>
+          <label class="radio-row"><span>Pounds (lb)</span><input type="radio" name="unit"></label>
+        </div>
+      </div>
+    </div>
+
+    <div class="dropdown">
+      <button class="list-item" type="button">
+        <span>Notifications</span><span class="chev">›</span>
+      </button>
+      <div class="dropdown-panel">
+        <div class="dropdown-panel-inner">
+          <label class="toggle-row"><span>Daily workout reminder</span><input type="checkbox" checked></label>
+          <label class="toggle-row"><span>New personal record</span><input type="checkbox" checked></label>
+          <label class="toggle-row"><span>Weekly summary</span><input type="checkbox"></label>
+        </div>
+      </div>
+    </div>
+
+    <div class="dropdown">
+      <button class="list-item" type="button">
+        <span>Help</span><span class="chev">›</span>
+      </button>
+      <div class="dropdown-panel">
+        <div class="dropdown-panel-inner help-links">
+          <a href="#">Help center</a>
+          <a href="#">Contact us</a>
+          <a href="#">Terms of use</a>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-outline" id="logout-button" type="button">Log out</button>
+  </main>
+
+  <nav>
+    <a href="workout.html"><span class="icon"></span>Today</a>
+    <a href="plans.html"><span class="icon"></span>Plans</a>
+    <a href="history.html"><span class="icon"></span>History</a>
+    <a href="progress.html"><span class="icon"></span>Progress</a>
+    <a class="active"  href="profile.html"><span class="icon"></span>Profile</a>
+  </nav>
+</div>
+
+<script src="assets/scripts/api.js"></script>
+<script>
+  if (!FerroApi.requireLogin()) throw new Error('session missing');
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function getInitials(name) {
+    return (name || 'F')
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map(function(part) { return part[0]; })
+      .join('')
+      .toUpperCase();
+  }
+
+  async function loadProfile() {
+    try {
+      var user = await FerroApi.me();
+      document.getElementById('profile-name').textContent = user.name;
+      document.getElementById('profile-email').textContent = user.email;
+      document.getElementById('avatar').textContent = getInitials(user.name);
+      document.getElementById('name').value = user.name;
+      document.getElementById('email-edit').value = user.email;
+    } catch (error) {
+      document.getElementById('status').textContent = error.message;
+      document.getElementById('status').className = 'form-status error';
+    }
+  }
+
+  document.querySelectorAll('.dropdown > .list-item').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var parent = btn.parentElement;
+      var wasOpen = parent.classList.contains('open');
+      document.querySelectorAll('.dropdown.open').forEach(function(d) {
+        d.classList.remove('open');
+      });
+      if (!wasOpen) parent.classList.add('open');
+    });
+  });
+
+  document.getElementById('save-profile-button').addEventListener('click', async function() {
+    var btn = document.getElementById('save-profile-button');
+    var status = document.getElementById('status');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    status.textContent = '';
+    status.className = 'form-status';
+
+    try {
+      await FerroApi.updateProfile({
+        name: document.getElementById('name').value,
+        email: document.getElementById('email-edit').value
+      });
+      status.textContent = 'Profile updated.';
+      status.classList.add('success');
+      await loadProfile();
+    } catch (error) {
+      status.textContent = error.message;
+      status.classList.add('error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save';
+    }
+  });
+
+  document.getElementById('logout-button').addEventListener('click', async function() {
+    await FerroApi.logout();
+    window.location.href = 'home.html';
+  });
+
+  loadProfile();
+</script>
+</body>
+</html>
