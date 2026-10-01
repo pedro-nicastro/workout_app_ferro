@@ -1,4 +1,4 @@
-# FERRO — XAMPP + Java + MariaDB
+# FERRO — Em Desenvolvimento
 
 ## Arquitetura
 
