@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/styles/style.css">
+<link rel="stylesheet" href="assets/styles/ferro.css">
 </head>
 <body>
 <div class="screen">
@@ -28,15 +28,16 @@
   </main>
 
   <nav>
-    <a class="active" href="workout.html"><span class="icon"></span>Today</a>
-    <a href="plans.html"><span class="icon"></span>Plans</a>
-    <a href="history.html"><span class="icon"></span>History</a>
-    <a href="progress.html"><span class="icon"></span>Progress</a>
-    <a href="profile.html"><span class="icon"></span>Profile</a>
+    <a class="active" aria-current="page" href="workout.html"><span class="icon" aria-hidden="true"></span>Today</a>
+    <a href="plans.html"><span class="icon" aria-hidden="true"></span>Plans</a>
+    <a href="history.html"><span class="icon" aria-hidden="true"></span>History</a>
+    <a href="progress.html"><span class="icon" aria-hidden="true"></span>Progress</a>
+    <a href="profile.html"><span class="icon" aria-hidden="true"></span>Profile</a>
   </nav>
 </div>
 
 <script src="assets/scripts/api.js"></script>
+  <script src="assets/scripts/preferences.js"></script>
 <script>
   if (!FerroApi.requireLogin()) throw new Error('session missing');
 
@@ -54,8 +55,16 @@
     plan: null,
     days: [],
     todayIndex: 0,
-    index: 0
+    index: 0,
+    doneDates: {}
   };
+
+  // Controla salvamentos automaticos individuais por exercicio.
+  var loadSaveTimers = {};
+  var loadSaveQueues = {};
+  var loadSaveVersions = {};
+  var loadSavePayloads = {};
+  var draftLoadRequest = 0;
 
   function escapeHtml(value) {
     return String(value == null ? '' : value)
@@ -69,6 +78,38 @@
   function todayWeekIndex() {
     // JavaScript e FERRO usam domingo=0, segunda=1 ... sábado=6.
     return new Date().getDay();
+  }
+
+  function pad2(n) {
+    return n < 10 ? '0' + n : String(n);
+  }
+
+  // Data (AAAA-MM-DD) de um dia da semana ATUAL (domingo a sábado).
+  function dateForWeekday(weekdayIndex) {
+    var d = new Date();
+    d.setDate(d.getDate() + (weekdayIndex - d.getDay()));
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+
+  // Hoje e dias anteriores da semana podem ser concluídos; dias futuros não.
+  function canComplete(weekdayIndex) {
+    return weekdayIndex <= state.todayIndex;
+  }
+
+  async function loadDoneDates() {
+    state.doneDates = {};
+    try {
+      var history = await FerroApi.workoutHistory();
+      (history || []).forEach(function(item) {
+        if (item && item.date) state.doneDates[String(item.date).substring(0, 10)] = true;
+      });
+    } catch (_) {
+      // O histórico é só um indicador visual; se falhar, o resto continua funcionando.
+    }
+  }
+
+  function isDone(weekdayIndex) {
+    return !!state.doneDates[dateForWeekday(weekdayIndex)];
   }
 
   function formatToday() {
@@ -103,15 +144,24 @@
       var isSelected = item.index === state.index;
       var classes = 'week-day-view ' +
         (item.type === 'training' ? 'is-training' : 'is-rest') +
+        (item.index > state.todayIndex ? ' is-unavailable' : '') +
         (isSelected ? ' selected' : '') +
         (isTodayDay ? ' today' : '');
+      var status = item.type === 'training' ? (isDone(item.index) ? 'Done' : 'Training') : 'Rest';
+      var accessibilityLabel = DAYS[item.index].name + ', ' + status +
+        (isTodayDay ? ', today' : '') +
+        (item.type === 'training' && !canComplete(item.index) ? ', unavailable to complete until that day' : '');
 
       return '' +
-        '<button type="button" class="' + classes + '" data-day="' + item.index + '">' +
+        '<button type="button" class="' + classes + '" data-day="' + item.index + '" aria-label="' + accessibilityLabel + '" aria-pressed="' + isSelected + '">' +
           '<strong>' + DAYS[item.index].short + '</strong>' +
-          '<span>' + (item.type === 'training' ? 'Workout' : 'Rest') + '</span>' +
+          '<span>' + (isDone(item.index) ? '✓ Done' : status) + '</span>' +
         '</button>';
     }).join('');
+  }
+
+  function completeLabel() {
+    return isDone(state.index) ? 'Complete workout again' : 'Complete workout';
   }
 
   function renderContent() {
@@ -126,8 +176,11 @@
     var isToday = state.index === state.todayIndex;
 
     dateLine.textContent = isToday ? formatToday() : DAYS[item.index].name;
+    var pastDay = !isToday && canComplete(item.index);
     preview.style.display = isToday ? 'none' : 'block';
-    preview.textContent = isToday ? '' : 'Viewing another day of the week';
+    preview.textContent = isToday ? '' :
+      (pastDay ? 'Earlier this week — you can still mark this workout as completed'
+               : 'Upcoming day — it can only be completed on the day');
 
     if (item.type === 'rest') {
       title.textContent = 'Rest';
@@ -147,13 +200,26 @@
     }
 
     var rows = exercises.map(function(ex) {
+      var unit = FerroPreferences.unit();
+      var initialWeight = FerroPreferences.inputMass(ex.weight || 0);
+      var adjustment = unit === 'lb' ? 5 : 2.5;
+
       return '' +
-        '<div class="exercise">' +
-          '<div class="check" data-check-ex="' + ex.id + '"></div>' +
-          '<div class="ex-name">' + escapeHtml(ex.name) + '</div>' +
-          '<div class="ex-meta">' +
-            escapeHtml(ex.sets || '') + '×' + escapeHtml(ex.reps || '') +
-            (ex.weight ? ' · ' + escapeHtml(ex.weight) : '') +
+        '<div class="exercise workout-exercise">' +
+          '<div class="check" role="checkbox" aria-label="Mark ' + escapeHtml(ex.name) + ' as completed" aria-checked="false" tabindex="0" data-check-ex="' + ex.id + '"></div>' +
+          '<div class="workout-exercise-content">' +
+            '<div class="workout-exercise-heading">' +
+              '<div class="ex-name">' + escapeHtml(ex.name) + '</div>' +
+              '<div class="ex-meta">' + escapeHtml(ex.sets || '') + '×' + escapeHtml(ex.reps || '') + '</div>' +
+            '</div>' +
+            '<div class="weight-editor" aria-label="Load used for ' + escapeHtml(ex.name) + '">' +
+              '<span class="weight-label">LOAD</span>' +
+              '<button type="button" class="weight-adjust" data-weight-adjust="-' + adjustment + '" data-weight-id="' + ex.id + '" aria-label="Decrease load">−</button>' +
+              '<input class="weight-input" type="number" min="0" step="' + (unit === 'lb' ? '1' : '0.5') + '" inputmode="decimal" value="' + initialWeight + '" data-weight-id="' + ex.id + '" aria-label="Load in ' + unit + ' for ' + escapeHtml(ex.name) + '">' +
+              '<span class="weight-unit">' + unit + '</span>' +
+              '<button type="button" class="weight-adjust" data-weight-adjust="' + adjustment + '" data-weight-id="' + ex.id + '" aria-label="Increase load">+</button>' +
+              '<span class="weight-save-status" id="weight-status-' + ex.id + '" aria-live="polite">Not saved yet</span>' +
+            '</div>' +
           '</div>' +
         '</div>';
     }).join('');
@@ -161,8 +227,8 @@
     content.innerHTML = '' +
       '<div class="section-head">' + exercises.length + ' exercises</div>' +
       rows +
-      (isToday ?
-        '<div class="cta" id="complete-button" style="cursor:pointer;">Complete workout</div>' :
+        (canComplete(item.index) ?
+        '<button class="cta complete-workout" id="complete-button" type="button">' + completeLabel() + '</button>' :
         '');
   }
 
@@ -171,11 +237,121 @@
     renderContent();
   }
 
+  function setLoadStatus(exerciseId, message, statusClass) {
+    var status = document.getElementById('weight-status-' + exerciseId);
+    if (!status) return;
+    status.textContent = message;
+    status.className = 'weight-save-status' + (statusClass ? ' ' + statusClass : '');
+  }
+
+  function persistExerciseLoad(exerciseId, version) {
+    var previous = loadSaveQueues[exerciseId] || Promise.resolve();
+    var task = previous.catch(function() {}).then(async function() {
+      if (version !== loadSaveVersions[exerciseId]) return;
+      var payload = loadSavePayloads[exerciseId];
+      if (!payload) return;
+      var weight = payload.weight;
+      if (!Number.isFinite(weight) || weight < 0 || weight > 999999.99) {
+        setLoadStatus(exerciseId, 'Invalid load', 'is-error');
+        throw new Error('Enter a valid load between 0 and 999999.99 kg.');
+      }
+
+      setLoadStatus(exerciseId, 'Saving...', 'is-saving');
+      await FerroApi.saveWorkoutLoadDraft({
+        planId: payload.planId,
+        weekday: payload.weekday,
+        date: payload.date,
+        exerciseId: Number(exerciseId),
+        weight: weight
+      });
+
+      if (version === loadSaveVersions[exerciseId]) {
+        setLoadStatus(exerciseId, 'Saved', 'is-saved');
+      }
+    });
+    loadSaveQueues[exerciseId] = task;
+    return task;
+  }
+
+  function scheduleLoadSave(exerciseId, immediate) {
+    var input = document.querySelector('.weight-input[data-weight-id="' + exerciseId + '"]');
+    if (!input || !state.plan) return Promise.resolve();
+    loadSaveVersions[exerciseId] = (loadSaveVersions[exerciseId] || 0) + 1;
+    var version = loadSaveVersions[exerciseId];
+    loadSavePayloads[exerciseId] = {
+      planId: state.plan.id,
+      weekday: state.index,
+      date: dateForWeekday(state.index),
+      weight: input.value === '' ? 0 : FerroPreferences.toKg(Number(input.value))
+    };
+    if (loadSaveTimers[exerciseId]) clearTimeout(loadSaveTimers[exerciseId]);
+    setLoadStatus(exerciseId, 'Not saved', 'is-saving');
+
+    if (immediate) return persistExerciseLoad(exerciseId, version);
+
+    loadSaveTimers[exerciseId] = setTimeout(function() {
+      delete loadSaveTimers[exerciseId];
+      persistExerciseLoad(exerciseId, version).catch(function() {
+        if (version === loadSaveVersions[exerciseId]) {
+          setLoadStatus(exerciseId, 'Not saved — retry', 'is-error');
+        }
+      });
+    }, 450);
+    return Promise.resolve();
+  }
+
+  async function flushPendingLoadSaves() {
+    var pending = [];
+    Object.keys(loadSaveVersions).forEach(function(exerciseId) {
+      if (loadSaveTimers[exerciseId]) {
+        clearTimeout(loadSaveTimers[exerciseId]);
+        delete loadSaveTimers[exerciseId];
+        pending.push(persistExerciseLoad(exerciseId, loadSaveVersions[exerciseId]));
+      } else if (loadSaveQueues[exerciseId]) {
+        pending.push(loadSaveQueues[exerciseId]);
+      }
+    });
+    return Promise.allSettled(pending);
+  }
+
+  async function loadSavedWorkoutLoads() {
+    var item = state.days[state.index];
+    if (!state.plan || !item || item.type !== 'training') return;
+
+    var requestId = ++draftLoadRequest;
+    var planId = state.plan.id;
+    var weekday = state.index;
+    var date = dateForWeekday(weekday);
+    var versionsAtStart = Object.assign({}, loadSaveVersions);
+
+    try {
+      var savedLoads = await FerroApi.workoutLoadDrafts(planId, weekday, date);
+      if (requestId !== draftLoadRequest || state.index !== weekday || !state.plan || state.plan.id !== planId) return;
+
+      Object.keys(savedLoads || {}).forEach(function(exerciseId) {
+        if ((loadSaveVersions[exerciseId] || 0) !== (versionsAtStart[exerciseId] || 0)) return;
+        var input = document.querySelector('.weight-input[data-weight-id="' + exerciseId + '"]');
+        if (!input) return;
+        input.value = FerroPreferences.inputMass(savedLoads[exerciseId]);
+        setLoadStatus(exerciseId, 'Recovered', 'is-saved');
+      });
+    } catch (error) {
+      if (requestId === draftLoadRequest) {
+        var status = document.querySelector('.weight-save-status');
+        if (status) {
+          status.textContent = 'Could not load saved loads';
+          status.classList.add('is-error');
+        }
+      }
+    }
+  }
+
   async function initialize() {
     try {
+      await FerroPreferences.load();
       var plan = await FerroApi.activePlan();
 
-      if (!plan || !plan.days || plan.days.length === 0) {
+      if (!plan) {
         document.getElementById('date-line').textContent = formatToday();
         document.getElementById('day-title').textContent = 'No active plan';
         document.getElementById('content').innerHTML =
@@ -188,13 +364,105 @@
       state.days = buildWeek(plan);
       state.todayIndex = todayWeekIndex();
       state.index = state.todayIndex;
+      await loadDoneDates();
 
       document.getElementById('weekly-nav').style.display = 'block';
       render();
+      await loadSavedWorkoutLoads();
     } catch (error) {
       document.getElementById('day-title').textContent = 'Error';
       document.getElementById('content').innerHTML =
         '<div class="empty-state">' + escapeHtml(error.message) + '</div>';
+    }
+  }
+
+
+  async function completeWorkout() {
+    var button = document.getElementById('complete-button');
+    var completedPlanId = state.plan.id;
+    var completedWeekday = state.index;
+    var completedDate = dateForWeekday(completedWeekday);
+    var completedExerciseIds = Array.prototype.map.call(
+      document.querySelectorAll('.check.done[data-check-ex]'),
+      function (check) { return Number(check.getAttribute('data-check-ex')); }
+    ).filter(function (id) { return Number.isFinite(id) && id > 0; });
+
+    var exerciseLoads = Array.prototype.map.call(
+      document.querySelectorAll('.weight-input[data-weight-id]'),
+      function (input) {
+        return {
+          exerciseId: Number(input.getAttribute('data-weight-id')),
+          weight: input.value === '' ? 0 : FerroPreferences.toKg(Number(input.value))
+        };
+      }
+    );
+
+    var invalidLoad = exerciseLoads.some(function (load) {
+      return !Number.isFinite(load.weight) || load.weight < 0 || load.weight > 999999.99;
+    });
+    if (invalidLoad) {
+      alert('Enter a valid load between 0 and 999999.99 kg for each exercise.');
+      return;
+    }
+
+    if (!completedExerciseIds.length) {
+      alert('Complete at least one exercise before finishing the workout.');
+      return;
+    }
+
+    button.style.pointerEvents = 'none';
+    button.textContent = 'Saving...';
+    document.querySelectorAll('#weekly-buttons button').forEach(function(dayButton) {
+      dayButton.disabled = true;
+    });
+    document.querySelectorAll('.weight-input, .weight-adjust, .check').forEach(function(control) {
+      control.style.pointerEvents = 'none';
+      if (control.tagName === 'INPUT' || control.tagName === 'BUTTON') control.disabled = true;
+    });
+
+    try {
+      // Aguarda os rascunhos pendentes; a conclusao tambem envia os valores atuais.
+      await flushPendingLoadSaves();
+      var previousProgress = null;
+      if (FerroPreferences.current().personalRecordNotification &&
+          'Notification' in window && Notification.permission === 'granted') {
+        try { previousProgress = await FerroApi.progress(); } catch (_) {}
+      }
+      var result = await FerroApi.completeWorkout({
+        planId: completedPlanId,
+        weekday: completedWeekday,
+        date: completedDate,
+        completedExerciseIds: completedExerciseIds,
+        exerciseLoads: exerciseLoads
+      });
+
+      if (previousProgress) {
+        try {
+          var updatedProgress = await FerroApi.progress();
+          FerroPreferences.notifyNewRecords(previousProgress, updatedProgress);
+        } catch (_) {}
+      }
+
+      state.doneDates[completedDate] = true;
+      renderWeek();
+
+      document.getElementById('content').innerHTML =
+        '<div class="rest-day"><span class="big">✓</span>' +
+        'Workout saved.<br>' + escapeHtml(FerroPreferences.formatMass(
+          FerroPreferences.parseMass(result.volume || '0kg', 'kg') || 0
+        )) + ' volume recorded.</div>' +
+        '<a class="cta" href="history.html" style="display:block; text-decoration:none; text-align:center;">View history</a>';
+    } catch (error) {
+      button.style.pointerEvents = 'auto';
+      button.textContent = completeLabel();
+      document.querySelectorAll('#weekly-buttons button').forEach(function(dayButton) {
+        dayButton.disabled = false;
+      });
+      document.querySelectorAll('.weight-input, .weight-adjust, .check').forEach(function(control) {
+        control.style.pointerEvents = '';
+        if (control.tagName === 'INPUT' || control.tagName === 'BUTTON') control.disabled = false;
+      });
+      alert(error.message);
     }
   }
 
@@ -203,17 +471,60 @@
     if (!button) return;
     state.index = parseInt(button.getAttribute('data-day'), 10);
     render();
+    loadSavedWorkoutLoads();
   });
 
   document.getElementById('content').addEventListener('click', function(e) {
-    if (e.target.classList.contains('check')) {
-      e.target.classList.toggle('done');
-      var name = e.target.parentElement.querySelector('.ex-name');
-      if (name) name.classList.toggle('done');
+    var adjustButton = e.target.closest('[data-weight-adjust]');
+    if (adjustButton) {
+      var weightId = adjustButton.getAttribute('data-weight-id');
+      var weightInput = document.querySelector('.weight-input[data-weight-id="' + weightId + '"]');
+      if (weightInput) {
+        var currentWeight = Number(weightInput.value) || 0;
+        var adjustment = Number(adjustButton.getAttribute('data-weight-adjust'));
+        weightInput.value = Math.max(0, Math.round((currentWeight + adjustment) * 100) / 100).toString();
+        weightInput.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      return;
+    }
+
+    var check = e.target.closest('.check[data-check-ex]');
+    if (check) {
+      check.classList.toggle('done');
+      var isCompleted = check.classList.contains('done');
+      check.setAttribute('aria-checked', isCompleted ? 'true' : 'false');
+      check.closest('.workout-exercise').classList.toggle('is-completed', isCompleted);
+      var name = check.parentElement.querySelector('.ex-name');
+      if (name) {
+        name.classList.toggle('done', isCompleted);
+        check.setAttribute('aria-label', 'Mark ' + name.textContent + (isCompleted ? ' as not completed' : ' as completed'));
+      }
     }
 
     if (e.target.id === 'complete-button') {
-      alert('Workout logging will be connected to history in the next step.');
+      completeWorkout();
+    }
+  });
+
+  document.getElementById('content').addEventListener('input', function(e) {
+    var input = e.target.closest('.weight-input[data-weight-id]');
+    if (!input) return;
+    scheduleLoadSave(input.getAttribute('data-weight-id'), false);
+  });
+
+  document.getElementById('content').addEventListener('change', function(e) {
+    var input = e.target.closest('.weight-input[data-weight-id]');
+    if (!input) return;
+    scheduleLoadSave(input.getAttribute('data-weight-id'), true).catch(function() {
+      setLoadStatus(input.getAttribute('data-weight-id'), 'Not saved — retry', 'is-error');
+    });
+  });
+
+  document.getElementById('content').addEventListener('keydown', function(e) {
+    var check = e.target.closest('.check[data-check-ex]');
+    if (check && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      check.click();
     }
   });
 

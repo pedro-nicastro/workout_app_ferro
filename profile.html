@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/styles/style.css">
+<link rel="stylesheet" href="assets/styles/ferro.css">
 </head>
 <body>
 <div class="screen">
@@ -20,9 +20,9 @@
   </div>
 
   <div class="stats">
-    <div class="stat"><div class="num">0<span>kg</span></div><div class="lbl">Current weight</div></div>
-    <div class="stat"><div class="num">0<span>kg</span></div><div class="lbl">Goal</div></div>
-    <div class="stat"><div class="num">0</div><div class="lbl">Total workouts</div></div>
+    <div class="stat"><div class="num" id="profile-current-weight">—<span>kg</span></div><div class="lbl">Current weight</div></div>
+    <div class="stat"><div class="num" id="profile-goal-weight">—<span>kg</span></div><div class="lbl">Goal</div></div>
+    <div class="stat"><div class="num" id="profile-total-workouts">0</div><div class="lbl">Total workouts</div></div>
   </div>
 
   <main>
@@ -44,6 +44,14 @@
             <label for="email-edit">Email</label>
             <input id="email-edit" type="email">
           </div>
+          <div class="field">
+            <label for="current-weight-input">Current weight (kg)</label>
+            <input id="current-weight-input" type="number" min="0" max="22046.22" step="0.1" inputmode="decimal">
+          </div>
+          <div class="field" style="margin-bottom:12px;">
+            <label for="goal-weight-input">Goal weight (kg)</label>
+            <input id="goal-weight-input" type="number" min="0" max="22046.22" step="0.1" inputmode="decimal">
+          </div>
           <button class="btn-small" id="save-profile-button" type="button">Save</button>
         </div>
       </div>
@@ -55,8 +63,8 @@
       </button>
       <div class="dropdown-panel">
         <div class="dropdown-panel-inner">
-          <label class="radio-row"><span>Kilograms (kg)</span><input type="radio" name="unit" checked></label>
-          <label class="radio-row"><span>Pounds (lb)</span><input type="radio" name="unit"></label>
+          <label class="radio-row"><span>Kilograms (kg)</span><input id="unit-kg" type="radio" name="unit" value="kg" checked></label>
+          <label class="radio-row"><span>Pounds (lb)</span><input id="unit-lb" type="radio" name="unit" value="lb"></label>
         </div>
       </div>
     </div>
@@ -67,9 +75,11 @@
       </button>
       <div class="dropdown-panel">
         <div class="dropdown-panel-inner">
-          <label class="toggle-row"><span>Daily workout reminder</span><input type="checkbox" checked></label>
-          <label class="toggle-row"><span>New personal record</span><input type="checkbox" checked></label>
-          <label class="toggle-row"><span>Weekly summary</span><input type="checkbox"></label>
+          <label class="toggle-row"><span>Daily workout reminder</span><input id="notify-daily" type="checkbox" checked></label>
+          <label class="toggle-row"><span>New personal record</span><input id="notify-record" type="checkbox" checked></label>
+          <label class="toggle-row"><span>Weekly summary</span><input id="notify-weekly" type="checkbox"></label>
+          <p class="settings-note">Browser permission is required. Reminders and summaries run while FERRO is open.</p>
+          <button class="btn-small" id="enable-notifications" type="button">Enable browser notifications</button>
         </div>
       </div>
     </div>
@@ -80,9 +90,9 @@
       </button>
       <div class="dropdown-panel">
         <div class="dropdown-panel-inner help-links">
-          <a href="#">Help center</a>
-          <a href="#">Contact us</a>
-          <a href="#">Terms of use</a>
+          <a href="help.html">Help center</a>
+          <a href="mailto:?subject=FERRO%20support">Contact us</a>
+          <a href="help.html#terms">Terms of use</a>
         </div>
       </div>
     </div>
@@ -91,15 +101,16 @@
   </main>
 
   <nav>
-    <a href="workout.html"><span class="icon"></span>Today</a>
-    <a href="plans.html"><span class="icon"></span>Plans</a>
-    <a href="history.html"><span class="icon"></span>History</a>
-    <a href="progress.html"><span class="icon"></span>Progress</a>
-    <a class="active"  href="profile.html"><span class="icon"></span>Profile</a>
+    <a href="workout.html"><span class="icon" aria-hidden="true"></span>Today</a>
+    <a href="plans.html"><span class="icon" aria-hidden="true"></span>Plans</a>
+    <a href="history.html"><span class="icon" aria-hidden="true"></span>History</a>
+    <a href="progress.html"><span class="icon" aria-hidden="true"></span>Progress</a>
+    <a class="active" aria-current="page" href="profile.html"><span class="icon" aria-hidden="true"></span>Profile</a>
   </nav>
 </div>
 
 <script src="assets/scripts/api.js"></script>
+  <script src="assets/scripts/preferences.js"></script>
 <script>
   if (!FerroApi.requireLogin()) throw new Error('session missing');
 
@@ -122,14 +133,85 @@
       .toUpperCase();
   }
 
+  function setStatus(message, kind) {
+    var status = document.getElementById('status');
+    status.textContent = message || '';
+    status.className = 'form-status' + (kind ? ' ' + kind : '');
+  }
+
+  function renderSettings(settings) {
+    var unit = settings.unit === 'lb' ? 'lb' : 'kg';
+    document.getElementById('unit-kg').checked = unit === 'kg';
+    document.getElementById('unit-lb').checked = unit === 'lb';
+    document.getElementById('notify-daily').checked = !!settings.dailyWorkoutReminder;
+    document.getElementById('notify-record').checked = !!settings.personalRecordNotification;
+    document.getElementById('notify-weekly').checked = !!settings.weeklySummaryNotification;
+    document.getElementById('current-weight-input').value = settings.currentWeightKg == null
+      ? '' : String(FerroPreferences.round(FerroPreferences.fromKg(settings.currentWeightKg), 1));
+    document.getElementById('goal-weight-input').value = settings.goalWeightKg == null
+      ? '' : String(FerroPreferences.round(FerroPreferences.fromKg(settings.goalWeightKg), 1));
+    document.querySelector('label[for="current-weight-input"]').textContent = 'Current weight (' + unit + ')';
+    document.querySelector('label[for="goal-weight-input"]').textContent = 'Goal weight (' + unit + ')';
+    document.getElementById('current-weight-input').max = unit === 'lb' ? '22046.22' : '9999.99';
+    document.getElementById('goal-weight-input').max = unit === 'lb' ? '22046.22' : '9999.99';
+    document.getElementById('profile-current-weight').innerHTML =
+      (settings.currentWeightKg == null ? '—' : escapeHtml(FerroPreferences.formatMass(settings.currentWeightKg, false))) +
+      '<span>' + unit + '</span>';
+    document.getElementById('profile-goal-weight').innerHTML =
+      (settings.goalWeightKg == null ? '—' : escapeHtml(FerroPreferences.formatMass(settings.goalWeightKg, false))) +
+      '<span>' + unit + '</span>';
+  }
+
+  async function saveNotificationSetting(input) {
+    var fieldById = {
+      'notify-daily': 'dailyWorkoutReminder',
+      'notify-record': 'personalRecordNotification',
+      'notify-weekly': 'weeklySummaryNotification'
+    };
+    var field = fieldById[input.id];
+    var oldSettings = Object.assign({}, FerroPreferences.current());
+    try {
+      if (input.checked) {
+        var permission = await FerroPreferences.notificationPermission();
+        if (permission !== 'granted') {
+          setStatus(permission === 'unsupported'
+            ? 'This browser does not support notifications; the preference will still be saved.'
+            : 'Notifications are blocked by the browser; the preference will still be saved.', 'error');
+        }
+      }
+      var saved = await FerroPreferences.save((function () {
+        var change = {};
+        change[field] = input.checked;
+        return change;
+      })());
+      renderSettings(saved);
+      if (!input.checked || ("Notification" in window && Notification.permission === 'granted')) {
+        setStatus('Notification preferences saved.', 'success');
+      }
+    } catch (error) {
+      renderSettings(oldSettings);
+      setStatus(error.message, 'error');
+    }
+  }
+
   async function loadProfile() {
     try {
-      var user = await FerroApi.me();
+      var results = await Promise.all([
+        FerroApi.me(),
+        FerroApi.progress().catch(function () { return { totalWorkouts: 0 }; }),
+        FerroPreferences.load()
+      ]);
+      var user = results[0];
+      var progress = results[1];
+      var preferences = results[2];
+      document.getElementById('profile-total-workouts').textContent = progress.totalWorkouts;
       document.getElementById('profile-name').textContent = user.name;
       document.getElementById('profile-email').textContent = user.email;
       document.getElementById('avatar').textContent = getInitials(user.name);
       document.getElementById('name').value = user.name;
       document.getElementById('email-edit').value = user.email;
+      renderSettings(preferences);
+      if (preferences.loadError) setStatus('Could not refresh settings; showing the last saved values.', 'error');
     } catch (error) {
       document.getElementById('status').textContent = error.message;
       document.getElementById('status').className = 'form-status error';
@@ -160,20 +242,61 @@
         name: document.getElementById('name').value,
         email: document.getElementById('email-edit').value
       });
-      status.textContent = 'Profile updated.';
-      status.classList.add('success');
+      var unit = FerroPreferences.unit();
+      var currentInput = document.getElementById('current-weight-input').value;
+      var goalInput = document.getElementById('goal-weight-input').value;
+      await FerroPreferences.save({
+        currentWeightKg: currentInput === '' ? null : FerroPreferences.round(FerroPreferences.toKg(Number(currentInput)), 2),
+        goalWeightKg: goalInput === '' ? null : FerroPreferences.round(FerroPreferences.toKg(Number(goalInput)), 2),
+        unit: unit
+      });
+      setStatus('Profile and weight details updated.', 'success');
       await loadProfile();
     } catch (error) {
-      status.textContent = error.message;
-      status.classList.add('error');
+      setStatus(error.message, 'error');
     } finally {
       btn.disabled = false;
       btn.textContent = 'Save';
     }
   });
 
+  document.querySelectorAll('input[name="unit"]').forEach(function(input) {
+    input.addEventListener('change', async function() {
+      try {
+        var saved = await FerroPreferences.save({ unit: input.value });
+        renderSettings(saved);
+        setStatus('Unit preference saved.', 'success');
+      } catch (error) {
+        renderSettings(FerroPreferences.current());
+        setStatus(error.message, 'error');
+      }
+    });
+  });
+
+  ['notify-daily', 'notify-record', 'notify-weekly'].forEach(function(id) {
+    document.getElementById(id).addEventListener('change', function(event) {
+      saveNotificationSetting(event.target);
+    });
+  });
+
+  document.getElementById('enable-notifications').addEventListener('click', async function() {
+    try {
+      var permission = await FerroPreferences.notificationPermission();
+      if (permission === 'granted') {
+        FerroPreferences.refreshNotifications();
+        setStatus('Browser notifications are enabled.', 'success');
+      } else {
+        setStatus(permission === 'unsupported'
+          ? 'This browser does not support notifications.'
+          : 'Allow notifications for FERRO in your browser settings.', 'error');
+      }
+    } catch (error) {
+      setStatus(error.message, 'error');
+    }
+  });
+
   document.getElementById('logout-button').addEventListener('click', async function() {
-    await FerroApi.logout();
+    try { await FerroApi.logout(); } catch (_) { FerroApi.clearSession(); }
     window.location.href = 'home.html';
   });
 

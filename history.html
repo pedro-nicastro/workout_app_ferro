@@ -7,45 +7,438 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/styles/style.css" />
+<link rel="stylesheet" href="assets/styles/ferro.css">
 </head>
 <body>
 <div class="screen">
   <header>
-    <div class="date">September</div>
+    <div class="date" id="history-period">Workout history</div>
     <h1 class="display">History</h1>
   </header>
 
   <main>
-    <div class="day">
-      <div class="day-head"><span class="name">Chest &amp; Triceps</span><span class="date">Today</span></div>
-      <div class="day-stats"><span><b>6</b> exercises</span><span><b>3.240kg</b> volume</span></div>
+    <div class="stats" id="history-stats" hidden>
+      <div class="stat"><div class="num" id="stat-workouts">0</div><div class="lbl">Workouts</div></div>
+      <div class="stat"><div class="num" id="stat-exercises">0</div><div class="lbl">Exercises</div></div>
+      <div class="stat"><div class="num" id="stat-volume">0<span>kg</span></div><div class="lbl">Volume</div></div>
     </div>
-    <div class="day">
-      <div class="day-head"><span class="name">Back &amp; Biceps</span><span class="date">Sat, 19 set</span></div>
-      <div class="day-stats"><span><b>5</b> exercises</span><span><b>2.980kg</b> volume</span></div>
+
+    <div class="hist-tools" id="history-tools" hidden>
+      <input type="search" class="hist-search" id="history-search" placeholder="Search workout or exercise" autocomplete="off" aria-label="Search workouts">
+      <div class="hist-chips" id="period-chips">
+        <button type="button" class="hist-chip active" data-period="all">All</button>
+        <button type="button" class="hist-chip" data-period="7">7 days</button>
+        <button type="button" class="hist-chip" data-period="30">30 days</button>
+        <button type="button" class="hist-chip" data-period="month">This month</button>
+      </div>
+      <select class="hist-select" id="plan-filter" aria-label="Filter by plan" hidden></select>
     </div>
-    <div class="day">
-      <div class="day-head"><span class="name">Legs</span><span class="date">Thu, 17 set</span></div>
-      <div class="day-stats"><span><b>7</b> exercises</span><span><b>4.510kg</b> volume</span></div>
-    </div>
-    <div class="day">
-      <div class="day-head"><span class="name">Shoulders</span><span class="date">Tue, 15 set</span></div>
-      <div class="day-stats"><span><b>4</b> exercises</span><span><b>1.870kg</b> volume</span></div>
-    </div>
-    <div class="day">
-      <div class="day-head"><span class="name">Chest &amp; Triceps</span><span class="date">Mon, 14 set</span></div>
-      <div class="day-stats"><span><b>6</b> exercises</span><span><b>3.190kg</b> volume</span></div>
-    </div>
+
+    <div id="status" class="form-status" role="status"></div>
+    <div id="history-list"><div class="empty-state">Loading history...</div></div>
   </main>
 
   <nav>
-    <a href="workout.html"><span class="icon"></span>Today</a>
-    <a href="plans.html"><span class="icon"></span>Plans</a>
-    <a class="active" href="history.html"><span class="icon"></span>History</a>
-    <a href="progress.html"><span class="icon"></span>Progress</a>
-    <a href="profile.html"><span class="icon"></span>Profile</a>
+    <a href="workout.html"><span class="icon" aria-hidden="true"></span>Today</a>
+    <a href="plans.html"><span class="icon" aria-hidden="true"></span>Plans</a>
+    <a class="active" aria-current="page" href="history.html"><span class="icon" aria-hidden="true"></span>History</a>
+    <a href="progress.html"><span class="icon" aria-hidden="true"></span>Progress</a>
+    <a href="profile.html"><span class="icon" aria-hidden="true"></span>Profile</a>
   </nav>
 </div>
+
+<script src="assets/scripts/api.js"></script>
+  <script src="assets/scripts/preferences.js"></script>
+<script>
+  if (!FerroApi.requireLogin()) throw new Error('session missing');
+
+  var PAGE_SIZE = 20;
+
+  var state = {
+    items: [],
+    period: 'all',
+    plan: 'all',
+    query: '',
+    visible: PAGE_SIZE,
+    open: {},      // id -> true quando o treino está expandido
+    details: {},   // id -> detalhe já carregado (exercícios e séries)
+    errors: {},    // id -> mensagem de erro ao carregar o detalhe
+    loading: {}    // id -> true enquanto o detalhe está sendo buscado
+  };
+
+  var listEl = document.getElementById('history-list');
+  var statusEl = document.getElementById('status');
+  var statusTimer = null;
+
+  /* ---------- utilidades ---------- */
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+
+  function pad(number) { return number < 10 ? '0' + number : String(number); }
+
+  function parseDate(value) { return new Date(value); }
+  function validDate(date) { return !Number.isNaN(date.getTime()); }
+
+  function formatDay(date) {
+    if (!validDate(date)) return '—';
+    return new Intl.DateTimeFormat('en', { weekday: 'short', day: 'numeric', month: 'short' }).format(date);
+  }
+
+  function formatTime(date) {
+    if (!validDate(date)) return '';
+    return pad(date.getHours()) + ':' + pad(date.getMinutes());
+  }
+
+  function monthKey(date) {
+    return validDate(date) ? date.getFullYear() + '-' + pad(date.getMonth() + 1) : 'unknown';
+  }
+
+  function monthLabel(date) {
+    if (!validDate(date)) return 'Unknown date';
+    return new Intl.DateTimeFormat('en', { month: 'long', year: 'numeric' }).format(date);
+  }
+
+  function formatNumber(value) {
+    return Number(value).toLocaleString('en', { maximumFractionDigits: 1 });
+  }
+
+  function formatWeight(value) {
+    var number = Number(value);
+    if (!number) return 'no load';
+    return FerroPreferences.formatMass(number);
+  }
+
+  // Mantém toneladas para volumes grandes em kg; em lb, mostra o total convertido.
+  function volumeParts(value) {
+    var displayed = FerroPreferences.fromKg(value);
+    if (FerroPreferences.unit() === 'kg' && displayed >= 10000) {
+      return { num: formatNumber(displayed / 1000), unit: 't' };
+    }
+    return { num: formatNumber(displayed), unit: FerroPreferences.unit() };
+  }
+
+  function volumeOf(item) {
+    if (typeof item.volumeValue === 'number') return item.volumeValue;
+    return parseFloat(item.volume) || 0;
+  }
+
+  function plural(count, singular, pluralForm) {
+    return count + ' ' + (count === 1 ? singular : (pluralForm || singular + 's'));
+  }
+
+  function setStatus(message, kind) {
+    clearTimeout(statusTimer);
+    statusEl.textContent = message || '';
+    statusEl.className = 'form-status' + (kind ? ' ' + kind : '');
+    if (message && kind === 'success') {
+      statusTimer = setTimeout(function() { setStatus(''); }, 4000);
+    }
+  }
+
+  /* ---------- filtros ---------- */
+
+  function filteredItems() {
+    var now = new Date();
+    var cutoff = null;
+    if (state.period === '7' || state.period === '30') {
+      var days = state.period === '7' ? 6 : 29;   // inclui hoje
+      cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - days);
+    }
+    var query = state.query.trim().toLowerCase();
+
+    return state.items.filter(function(item) {
+      var date = parseDate(item.date);
+
+      if (state.period !== 'all') {
+        if (!validDate(date)) return false;
+        if (state.period === 'month' &&
+            (date.getFullYear() !== now.getFullYear() || date.getMonth() !== now.getMonth())) return false;
+        if (cutoff && date < cutoff) return false;
+      }
+      if (state.plan !== 'all' && item.planName !== state.plan) return false;
+
+      if (query) {
+        var text = [item.dayName, item.planName].concat(item.exerciseNames || []).join(' ').toLowerCase();
+        if (text.indexOf(query) === -1) return false;
+      }
+      return true;
+    });
+  }
+
+  function refreshPlanOptions() {
+    var select = document.getElementById('plan-filter');
+    var plans = [];
+    state.items.forEach(function(item) {
+      if (plans.indexOf(item.planName) === -1) plans.push(item.planName);
+    });
+
+    if (plans.indexOf(state.plan) === -1) state.plan = 'all';
+
+    select.innerHTML = '<option value="all">All plans</option>' + plans.map(function(name) {
+      return '<option value="' + escapeHtml(name) + '">' + escapeHtml(name) + '</option>';
+    }).join('');
+    select.value = state.plan;
+    select.hidden = plans.length < 2;
+  }
+
+  function syncControls() {
+    document.getElementById('history-search').value = state.query;
+    document.getElementById('plan-filter').value = state.plan;
+    Array.prototype.forEach.call(document.querySelectorAll('#period-chips .hist-chip'), function(chip) {
+      chip.classList.toggle('active', chip.dataset.period === state.period);
+    });
+  }
+
+  function clearFilters() {
+    state.period = 'all';
+    state.plan = 'all';
+    state.query = '';
+    state.visible = PAGE_SIZE;
+    syncControls();
+    renderList();
+  }
+
+  /* ---------- renderização ---------- */
+
+  function renderStats(list) {
+    var exercises = 0, volume = 0;
+    list.forEach(function(item) {
+      exercises += item.exercises || 0;
+      volume += volumeOf(item);
+    });
+    var parts = volumeParts(volume);
+    document.getElementById('stat-workouts').textContent = list.length;
+    document.getElementById('stat-exercises').textContent = exercises;
+    document.getElementById('stat-volume').innerHTML = escapeHtml(parts.num) + '<span>' + parts.unit + '</span>';
+  }
+
+  function detailHtml(id) {
+    if (state.errors[id]) {
+      return '<div class="hist-detail"><div class="hist-loading error">' + escapeHtml(state.errors[id]) + '</div></div>';
+    }
+    var detail = state.details[id];
+    if (!detail) {
+      return '<div class="hist-detail"><div class="hist-loading">Loading details...</div></div>';
+    }
+
+    var body = detail.exercises.length ? detail.exercises.map(function(exercise) {
+      var sets = exercise.sets.map(function(set) {
+        return '<div class="hist-set"><span>Set ' + set.number + '</span>' +
+          '<span><b>' + set.reps + '</b> reps × <b>' + escapeHtml(formatWeight(set.weight)) + '</b></span></div>';
+      }).join('');
+      return '<div class="hist-ex"><div class="hist-ex-name">' + escapeHtml(exercise.name) + '</div>' + sets + '</div>';
+    }).join('') : '<div class="hist-loading">No exercise details were recorded for this workout.</div>';
+
+    return '<div class="hist-detail">' + body +
+      '<div class="hist-detail-foot"><span>' + plural(detail.totalSets, 'set') + ' in total</span>' +
+      '<button type="button" class="btn-danger-outline" data-action="delete" data-id="' + id + '">Delete workout</button>' +
+      '</div></div>';
+  }
+
+  function itemHtml(item) {
+    var date = parseDate(item.date);
+    var open = !!state.open[item.id];
+    var itemVolume = volumeParts(volumeOf(item));
+    var when = formatDay(date) + (formatTime(date) ? ' · ' + formatTime(date) : '');
+
+    return '' +
+      '<div class="day hist-item' + (open ? ' open' : '') + '" data-id="' + item.id + '">' +
+        '<button type="button" class="hist-toggle" data-action="toggle" data-id="' + item.id + '" aria-expanded="' + open + '">' +
+          '<span class="day-head"><span class="name">' + escapeHtml(item.dayName) + '</span>' +
+          '<span class="date">' + escapeHtml(when) + '<span class="hist-chev">▾</span></span></span>' +
+          '<span class="day-stats"><span><b>' + (item.exercises || 0) + '</b> exercises</span>' +
+          '<span><b>' + escapeHtml(itemVolume.num + itemVolume.unit) + '</b> volume</span></span>' +
+          '<span class="hist-plan" style="display:block;">' + escapeHtml(item.planName) + '</span>' +
+        '</button>' +
+        '<div id="detail-' + item.id + '">' + (open ? detailHtml(item.id) : '') + '</div>' +
+      '</div>';
+  }
+
+  function renderList() {
+    var list = filteredItems();
+    renderStats(list);
+
+    document.getElementById('history-period').textContent = list.length === state.items.length
+      ? plural(list.length, 'recorded workout')
+      : list.length + ' of ' + plural(state.items.length, 'workout');
+
+    if (!list.length) {
+      listEl.innerHTML = '<div class="empty-state">No workouts match your filters.<br>' +
+        '<button type="button" class="hist-clear" data-action="clear">Clear filters</button></div>';
+      return;
+    }
+
+    // Totais de cada mês, considerando todos os treinos filtrados (não só os visíveis).
+    var months = {};
+    list.forEach(function(item) {
+      var key = monthKey(parseDate(item.date));
+      if (!months[key]) months[key] = { count: 0, volume: 0 };
+      months[key].count++;
+      months[key].volume += volumeOf(item);
+    });
+
+    var shown = list.slice(0, state.visible);
+    var html = '';
+    var lastKey = null;
+
+    shown.forEach(function(item) {
+      var date = parseDate(item.date);
+      var key = monthKey(date);
+      if (key !== lastKey) {
+        var volume = volumeParts(months[key].volume);
+        html += '<div class="hist-month"><span>' + escapeHtml(monthLabel(date)) + '</span>' +
+          '<span><b>' + plural(months[key].count, 'workout') + '</b> · ' +
+          escapeHtml(volume.num) + volume.unit + '</span></div>';
+        lastKey = key;
+      }
+      html += itemHtml(item);
+    });
+
+    if (list.length > shown.length) {
+      html += '<button type="button" class="hist-more" data-action="more">Show more (' +
+        (list.length - shown.length) + ' left)</button>';
+    }
+
+    listEl.innerHTML = html;
+
+    shown.forEach(function(item) {
+      if (state.open[item.id]) ensureDetail(item.id);
+    });
+  }
+
+  function renderDetailSlot(id) {
+    var slot = document.getElementById('detail-' + id);
+    if (slot) slot.innerHTML = state.open[id] ? detailHtml(id) : '';
+  }
+
+  /* ---------- detalhe e ações ---------- */
+
+  async function ensureDetail(id) {
+    if (state.details[id] || state.loading[id]) return;
+    state.loading[id] = true;
+    try {
+      state.details[id] = await FerroApi.workoutDetail(id);
+      delete state.errors[id];
+    } catch (error) {
+      state.errors[id] = error.message;
+    } finally {
+      delete state.loading[id];
+      renderDetailSlot(id);
+    }
+  }
+
+  function toggleItem(id) {
+    state.open[id] = !state.open[id];
+    if (state.open[id]) delete state.errors[id];
+
+    var node = listEl.querySelector('.hist-item[data-id="' + id + '"]');
+    if (node) {
+      node.classList.toggle('open', state.open[id]);
+      node.querySelector('.hist-toggle').setAttribute('aria-expanded', String(state.open[id]));
+    }
+    renderDetailSlot(id);
+    if (state.open[id]) ensureDetail(id);
+  }
+
+  async function deleteItem(id, button) {
+    var item = state.items.filter(function(entry) { return entry.id === id; })[0];
+    if (!item) return;
+
+    var label = item.dayName + ' (' + formatDay(parseDate(item.date)) + ')';
+    if (!window.confirm('Delete "' + label + '" from your history?\nIt will also be removed from your progress statistics.')) return;
+
+    button.disabled = true;
+    setStatus('');
+    try {
+      await FerroApi.deleteWorkout(id);
+      state.items = state.items.filter(function(entry) { return entry.id !== id; });
+      delete state.open[id];
+      delete state.details[id];
+      delete state.errors[id];
+
+      if (!state.items.length) {
+        showEmpty();
+      } else {
+        refreshPlanOptions();
+        renderList();
+      }
+      setStatus('Workout deleted.', 'success');
+    } catch (error) {
+      button.disabled = false;
+      setStatus(error.message, 'error');
+    }
+  }
+
+  function showEmpty() {
+    document.getElementById('history-stats').hidden = true;
+    document.getElementById('history-tools').hidden = true;
+    document.getElementById('history-period').textContent = 'Workout history';
+    listEl.innerHTML = '<div class="empty-state">No completed workouts yet.<br>Finish your first workout and it will appear here.</div>';
+  }
+
+  /* ---------- eventos ---------- */
+
+  listEl.addEventListener('click', function(event) {
+    var target = event.target.closest('[data-action]');
+    if (!target) return;
+
+    var action = target.dataset.action;
+    var id = Number(target.dataset.id);
+
+    if (action === 'toggle') toggleItem(id);
+    else if (action === 'delete') deleteItem(id, target);
+    else if (action === 'more') { state.visible += PAGE_SIZE; renderList(); }
+    else if (action === 'clear') clearFilters();
+  });
+
+  document.getElementById('history-search').addEventListener('input', function(event) {
+    state.query = event.target.value;
+    state.visible = PAGE_SIZE;
+    renderList();
+  });
+
+  document.getElementById('period-chips').addEventListener('click', function(event) {
+    var chip = event.target.closest('.hist-chip');
+    if (!chip) return;
+    state.period = chip.dataset.period;
+    state.visible = PAGE_SIZE;
+    syncControls();
+    renderList();
+  });
+
+  document.getElementById('plan-filter').addEventListener('change', function(event) {
+    state.plan = event.target.value;
+    state.visible = PAGE_SIZE;
+    renderList();
+  });
+
+  /* ---------- início ---------- */
+
+  async function initialize() {
+    try {
+      await FerroPreferences.load();
+      var history = await FerroApi.workoutHistory();
+      state.items = Array.isArray(history) ? history : [];
+
+      if (!state.items.length) {
+        showEmpty();
+        return;
+      }
+
+      document.getElementById('history-stats').hidden = false;
+      document.getElementById('history-tools').hidden = false;
+      refreshPlanOptions();
+      renderList();
+    } catch (error) {
+      listEl.innerHTML = '<div class="empty-state">' + escapeHtml(error.message) + '</div>';
+    }
+  }
+
+  initialize();
+</script>
 </body>
 </html>

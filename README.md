@@ -1,4 +1,4 @@
-# FERRO — Em Desenvolvimento
+# FERRO — XAMPP + Java + MariaDB
 
 ## Arquitetura
 
@@ -119,7 +119,19 @@ Já integrados ao database:
 - ativar plano
 - gerenciar exercícios
 
-## 8. Se aparecer erro
+## 8. Automatic load saving during workouts
+
+The workout screen automatically saves each exercise load to MariaDB after a short pause while typing. Saved values are restored when the same workout day is opened again. Completing the workout copies the final values into the permanent workout history and removes that day's temporary drafts.
+
+For an existing database, run this migration once in MySQL Workbench:
+
+`database/workout_load_drafts_migration.sql`
+
+For a fresh database, the table is already included in `database/ferro_database.sql`.
+
+The UI shows `Saving...`, `Saved`, or an error beside each exercise load. A load is considered saved only after the API confirms the database write.
+
+## 9. Se aparecer erro
 
 Teste primeiro:
 
@@ -130,3 +142,7 @@ Se não abrir, o problema é no backend Java.
 Se abrir com `conexaoBanco: erro`, o problema é entre Java e MariaDB.
 
 Se abrir com `conexaoBanco: ok`, então o database e o backend estão funcionando e o próximo ponto a verificar é o frontend.
+
+## 10. Interface
+
+Os estilos do aplicativo ficam consolidados em `assets/styles/ferro.css`. A camada visual mantém o tema escuro verde e é compartilhada pelas telas do produto. A página auxiliar `api-test.html` mantém seus estilos de diagnóstico isolados.

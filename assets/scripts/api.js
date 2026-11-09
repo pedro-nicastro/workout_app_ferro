@@ -181,5 +181,57 @@
       localStorage.setItem(USER_KEY, JSON.stringify(response));
       return response;
     },
+
+    profileSettings: async function () {
+      return request("/profile/settings");
+    },
+
+    updateProfileSettings: async function (data) {
+      return request("/profile/settings", {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+    },
+
+    completeWorkout: async function (data) {
+      return request("/workouts/complete", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+
+    workoutLoadDrafts: async function (planId, weekday, date) {
+      var query = new URLSearchParams({
+        planId: String(planId),
+        weekday: String(weekday),
+        date: date,
+      });
+      return request("/workouts/draft-loads?" + query.toString());
+    },
+
+    saveWorkoutLoadDraft: async function (data) {
+      return request("/workouts/draft-loads", {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+    },
+
+    workoutHistory: async function () {
+      return request("/workouts/history");
+    },
+
+    workoutDetail: async function (id) {
+      return request("/workouts/history/" + encodeURIComponent(id));
+    },
+
+    deleteWorkout: async function (id) {
+      return request("/workouts/history/" + encodeURIComponent(id), {
+        method: "DELETE",
+      });
+    },
+
+    progress: async function () {
+      return request("/workouts/progress");
+    },
   };
 })();

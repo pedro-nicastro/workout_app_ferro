@@ -7,43 +7,93 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/styles/style.css" />
+<link rel="stylesheet" href="assets/styles/ferro.css">
 </head>
 <body>
 <div class="screen">
   <header>
-    <div class="date">Last 6 weeks</div>
+    <div class="date" id="progress-summary">Loading statistics...</div>
     <h1 class="display">Progress</h1>
   </header>
 
   <main>
-    <div class="section-head">Weekly volume</div>
-    <div class="chart">
-      <div class="bar-wrap"><div class="bar" style="height:52%"></div><div class="bar-label">W1</div></div>
-      <div class="bar-wrap"><div class="bar" style="height:61%"></div><div class="bar-label">W2</div></div>
-      <div class="bar-wrap"><div class="bar" style="height:58%"></div><div class="bar-label">W3</div></div>
-      <div class="bar-wrap"><div class="bar" style="height:74%"></div><div class="bar-label">W4</div></div>
-      <div class="bar-wrap"><div class="bar" style="height:69%"></div><div class="bar-label">W5</div></div>
-      <div class="bar-wrap"><div class="bar current" style="height:88%"></div><div class="bar-label">W6</div></div>
+    <div class="stats">
+      <div class="stat"><div class="num" id="total-workouts">0</div><div class="lbl">Total workouts</div></div>
+      <div class="stat"><div class="num" id="week-workouts">0</div><div class="lbl">This week</div></div>
+      <div class="stat"><div class="num" id="streak">0</div><div class="lbl">Day streak</div></div>
     </div>
-    <div class="chart-note">Total volume (kg) lifted per week</div>
+
+    <div class="section-head">Weekly volume</div>
+    <div class="chart" id="volume-chart"><div class="empty-state">Loading...</div></div>
+    <div class="chart-note" id="volume-note">Total volume lifted per week</div>
 
     <div class="section-head">Personal records</div>
-    <div class="prs">
-      <div class="pr"><span class="lift">Barbell bench press</span><span class="val">80kg × 5</span></div>
-      <div class="pr"><span class="lift">Squat</span><span class="val">110kg × 5</span></div>
-      <div class="pr"><span class="lift">Deadlift</span><span class="val">140kg × 3</span></div>
-      <div class="pr"><span class="lift">Overhead press</span><span class="val">50kg × 6</span></div>
-    </div>
+    <div class="prs" id="records"><div class="empty-state">Loading...</div></div>
   </main>
 
   <nav>
-    <a href="workout.html"><span class="icon"></span>Today</a>
-    <a href="plans.html"><span class="icon"></span>Plans</a>
-    <a href="history.html"><span class="icon"></span>History</a>
-    <a class="active"  href="progress.html"><span class="icon"></span>Progress</a>
-    <a href="profile.html"><span class="icon"></span>Profile</a>
+    <a href="workout.html"><span class="icon" aria-hidden="true"></span>Today</a>
+    <a href="plans.html"><span class="icon" aria-hidden="true"></span>Plans</a>
+    <a href="history.html"><span class="icon" aria-hidden="true"></span>History</a>
+    <a class="active" aria-current="page" href="progress.html"><span class="icon" aria-hidden="true"></span>Progress</a>
+    <a href="profile.html"><span class="icon" aria-hidden="true"></span>Profile</a>
   </nav>
 </div>
+
+<script src="assets/scripts/api.js"></script>
+  <script src="assets/scripts/preferences.js"></script>
+<script>
+  if (!FerroApi.requireLogin()) throw new Error('session missing');
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+
+  function renderChart(weekly) {
+    var chart = document.getElementById('volume-chart');
+    if (!weekly.length) {
+      chart.innerHTML = '<div class="empty-state">No workout volume recorded yet.</div>';
+      return;
+    }
+    var max = Math.max.apply(null, weekly.map(function(w) { return Number(w.volume) || 0; }).concat([1]));
+    chart.innerHTML = weekly.map(function(w) {
+      var height = Math.max(4, Math.round((Number(w.volume) / max) * 100));
+      return '<div class="bar-wrap"><div class="bar" style="height:' + height + '%"></div>' +
+        '<div class="bar-label">' + escapeHtml(w.label) + '</div></div>';
+    }).join('');
+  }
+
+  async function initialize() {
+    try {
+      await FerroPreferences.load();
+      var data = await FerroApi.progress();
+      document.getElementById('total-workouts').textContent = data.totalWorkouts;
+      document.getElementById('week-workouts').textContent = data.workoutsThisWeek;
+      document.getElementById('streak').textContent = data.currentStreak;
+      document.getElementById('progress-summary').textContent =
+        data.workoutsThisMonth + ' workouts this month · ' +
+        FerroPreferences.formatMass(Number(data.totalVolume || 0)) + ' total volume';
+
+      renderChart(data.weeklyVolume || []);
+      document.getElementById('volume-note').textContent =
+        Number(data.totalExercises || 0) + ' exercises recorded · ' +
+        FerroPreferences.formatMass(Number(data.totalVolume || 0)) + ' total volume';
+
+      var records = data.personalRecords || [];
+      document.getElementById('records').innerHTML = records.length ? records.map(function(pr) {
+        return '<div class="pr"><span class="lift">' + escapeHtml(pr.exercise) +
+          '</span><span class="val">' + escapeHtml(FerroPreferences.formatMass(pr.weight)) + ' × ' + escapeHtml(pr.reps) + '</span></div>';
+      }).join('') : '<div class="empty-state">Complete workouts to build your personal records.</div>';
+    } catch (error) {
+      document.getElementById('progress-summary').textContent = 'Could not load statistics';
+      document.getElementById('volume-chart').innerHTML = '<div class="empty-state">' + escapeHtml(error.message) + '</div>';
+      document.getElementById('records').innerHTML = '';
+    }
+  }
+
+  initialize();
+</script>
 </body>
 </html>
